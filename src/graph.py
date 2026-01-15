@@ -18,6 +18,22 @@ from datetime import datetime, timedelta
 print(f"DEBUG: Model: {os.environ.get('LLM_MODEL')}")
 print(f"DEBUG: Base: {os.environ.get('OPENAI_API_BASE')}")
 key = os.environ.get('OPENAI_API_KEY')
+
+# Fallback: Try Streamlit Secrets (for Cloud) if env var missing
+if not key:
+    try:
+        import streamlit as st
+        if "OPENAI_API_KEY" in st.secrets:
+            print("Loading config from st.secrets")
+            os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+            if "OPENAI_API_BASE" in st.secrets:
+                 os.environ["OPENAI_API_BASE"] = st.secrets["OPENAI_API_BASE"]
+            if "LLM_MODEL" in st.secrets:
+                 os.environ["LLM_MODEL"] = st.secrets["LLM_MODEL"]
+            key = os.environ.get('OPENAI_API_KEY') # Refresh
+    except Exception as e:
+        print(f"Secrets load failed: {e}")
+
 print(f"DEBUG: Key: ...{key[-4:] if key else 'None'}")
 
 # 1. State Definition
