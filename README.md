@@ -33,8 +33,8 @@ A production-grade, LangGraph-orchestrated social media analytics system designe
     ```env
     OPENAI_API_KEY=sk-or-your-key-here
     OPENAI_API_BASE=https://openrouter.ai/api/v1
-    LLM_MODEL=google/gemini-2.0-flash-exp:free
-    # Or use: meta-llama/llama-3.2-3b-instruct:free
+    LLM_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
+    # Other options: google/gemini-2.0-flash-exp:free, meta-llama/llama-3.2-3b-instruct:free
     ```
 
 3.  **Data Ingestion** (If not already done)
