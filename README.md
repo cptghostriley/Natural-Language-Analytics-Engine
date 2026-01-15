@@ -36,10 +36,15 @@ A production-grade, LangGraph-orchestrated social media analytics system designe
 2.  **Configure Environment**
     Create a `.env` file in the root directory:
     ```env
-    OPENAI_API_KEY=sk-or-your-key-here
-    OPENAI_API_BASE=https://openrouter.ai/api/v1
-    LLM_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
-    # Other options: google/gemini-2.0-flash-exp:free, meta-llama/llama-3.2-3b-instruct:free
+    # Recommended: Groq (Free & Fast)
+    OPENAI_API_KEY=gsk_your_groq_key_here
+    OPENAI_API_BASE=https://api.groq.com/openai/v1
+    LLM_MODEL=llama-3.3-70b-versatile
+    
+    # Alternative: OpenRouter / OpenAI
+    # OPENAI_API_KEY=sk-or-...
+    # OPENAI_API_BASE=https://openrouter.ai/api/v1
+    # LLM_MODEL=google/gemini-2.0-flash-exp:free
     ```
 
 3.  **Data Ingestion** (If not already done)
