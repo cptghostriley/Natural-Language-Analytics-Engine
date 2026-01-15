@@ -2,5 +2,6 @@
 __pycache__/
 *.pyc
 *.csv
-data/*.duckdb
 .streamlit/
+data/analytics_full_backup.duckdb
+!data/analytics.duckdb
