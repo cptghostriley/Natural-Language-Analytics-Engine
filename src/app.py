@@ -34,6 +34,12 @@ if st.button("Analyze") and question:
             initial_state = {"question": question}
             result = graph_app.invoke(initial_state)
             
+            error = result.get("error")
+            if error:
+                st.error(f"Analysis Error: {error}")
+                # Halts execution here to prevent showing stale data or NameErrors
+                st.stop()
+                
             final_answer = result.get("final_answer", "No answer generated.")
             analytics_data = result.get("analytics_result")
             query_type = result.get("query_type")
