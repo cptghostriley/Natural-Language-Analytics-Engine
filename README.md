@@ -80,6 +80,26 @@ The system processes a historical social media dataset (October 2025). The follo
 *   **`topic_id`**: Cluster ID (0-19) assigned via K-Means on `embedding`.
 *   **`week`** / **`month`**: Derived time units for aggregation.
 
+## 💾 Database Strategy
+
+To ensure instant cloud startup times (<5s) on Streamlit Community Cloud:
+
+1.  **Production DB (Repo)**: `data/analytics.duckdb`
+    *   **Size**: ~38MB
+    *   **Content**: Metadata, Content, Sentiment, Topics.
+    *   **Missing**: Vector Embeddings (Dropped to save RAM/Disk).
+    *   **Performance**: Lightning fast aggregations.
+
+2.  **Research DB (Hugging Face)**:
+    *   **Link**: [Social-Media-Posts-Dataset-Embeddings-Included-DUCKDB](https://huggingface.co/datasets/Bhavin1905/Social-Media-Posts-Dataset-Embeddings-Included-DUCKDB)
+    *   **Size**: ~1.4GB
+    *   **Content**: Includes 768-dim vector embeddings for RAG/Semantic Search.
+    *   **Usage**: Set `DUCKDB_URL` in secrets to auto-download this if needed (warning: high RAM usage).
+
+### **Utility Scripts**
+*   `src/optimize_db.py`: Drops embedding column and vacuums the DB.
+*   `src/shrink_db.py`: Creates a clean, small export of the DB.
+
 ## ⚠️ Important Notes
 
 *   **Dataset Timeframe**: The included dataset covers **October 2025**. Queries for "today" (Real-time) will return no data. Use relative terms ("Last week") which map to the *dataset's* last week (Oct 24-30).
