@@ -85,12 +85,14 @@ def classify_query(state: AnalyticsState):
     4. complaints_analysis 
     5. weekly_summary
     6. influencer_analysis
+    7. keyword_search ("Find posts about X")
     
     Task:
     1. Identify query_type. If unknown, use "unsupported".
     2. Extract filters:
        - If explicit dates: "start_date", "end_date" (YYYY-MM-DD).
        - If relative time: "time_expr" (enum: "last_week", "this_week", "last_7_days", "this_month", "last_month").
+       - If keyword search: "keyword" (the string to search).
        - Ignore vague terms like "campaign" (return empty filters).
        - Do NOT resolve dates yourself.
     

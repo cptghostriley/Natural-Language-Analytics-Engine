@@ -224,6 +224,36 @@ def execute_analytics_query(query_type, filters=None):
             df = con.execute(sql, params).fetchdf()
             result = df.to_dict(orient='records')
 
+        elif query_type == "keyword_search":
+            keyword = filters.get("keyword")
+            if not keyword:
+                return {"error": "No keyword provided"}
+            
+            # Sanitized ILIKE
+            search_term = f"%{keyword}%"
+            # Add to params
+            params.append(search_term) 
+            
+            sql = f"""
+            SELECT postcontent, createddate, sentiment
+            FROM posts
+            WHERE {base_where} AND postcontent ILIKE ?
+            ORDER BY createddate DESC
+            LIMIT 10
+            """
+            # Note: params already has base_where params. Need to append search_term.
+            # But wait, base_where params are in 'params' list.
+            # I need to be careful about parameter order.
+            # base_where placeholders come first. ILIKE placeholder is last.
+            # correct.
+            
+            df = con.execute(sql, params).fetchdf()
+            # Convert date
+            if 'createddate' in df.columns:
+                df['createddate'] = df['createddate'].astype(str)
+                
+            result = df.to_dict(orient='records')
+
         else:
             raise ValueError(f"Unknown query type: {query_type}")
             
