@@ -1,0 +1,259 @@
+📄 Project Design Document
+Natural Language Social Media Analytics System (LangGraph-Based)
+1. Problem Statement
+
+Enterprise clients (banks, airlines, regulatory bodies) need to analyze large volumes of social media data to answer questions such as:
+
+“What was the sentiment trend last week?”
+
+“What topics were people discussing?”
+
+“What are users complaining about?”
+
+Currently, answering these questions requires technical expertise and manual dataset queries.
+The objective is to democratize analytics access by enabling non-technical users to ask questions in natural language and receive accurate, data-backed analytical responses.
+
+2. Dataset Description
+
+The system operates on a dataset with the following schema:
+
+id           : integer
+uniqueid     : string
+postcontent  : string
+createddate  : timestamp
+embedding    : vector<float>
+
+
+Dataset size: ~120,000 records
+Each record represents a single social media post.
+
+3. Core Design Constraints (Non-Negotiable)
+
+No mock or fallback responses
+
+Every answer must be computed from data
+
+LLMs must not perform analytics
+
+LLMs are used only for:
+
+Query interpretation
+
+Result explanation
+
+All analytics must be deterministic and auditable
+
+If a question cannot be answered using computed data, the system must explicitly reject it.
+
+4. High-Level System Architecture
+User (Natural Language)
+        ↓
+LangGraph Orchestrator
+        ↓
+Query Classification Node
+        ↓
+Analytics Execution Node
+        ↓
+Deterministic Computation (Pandas / NumPy)
+        ↓
+LLM-Based Explanation (Grounded)
+        ↓
+Final Response
+
+
+LangGraph is used to explicitly control execution flow and eliminate opaque agent behavior.
+
+5. Derived Analytics Layer (Critical Component)
+
+Because the raw dataset does not contain explicit analytics fields, derived signals must be computed and cached before the system can answer meaningful questions.
+
+5.1 Time-Based Fields (Derived Once)
+date   = date(createddate)
+week   = ISO week(createddate)
+month  = year-month(createddate)
+
+5.2 Sentiment Inference (Computed, Cached, Deterministic)
+
+Sentiment is inferred from postcontent using batch LLM classification and stored permanently.
+
+Sentiment scale:
+
+-1 → Negative
+ 0 → Neutral
++1 → Positive
+
+
+This is a computed signal, not a mock or assumption.
+
+5.3 Topic Modeling via Embeddings
+
+Using precomputed embeddings:
+
+Perform clustering (e.g., KMeans)
+
+Assign each post a topic_id
+
+This enables:
+
+Topic frequency analysis
+
+Complaint clustering
+
+Trend attribution
+
+6. Supported Analytics Queries (Strictly Enforced)
+
+The system supports only the following query types:
+
+sentiment_trend
+volume_trend
+top_topics
+complaints_analysis
+weekly_summary
+
+
+Any other query must be rejected.
+
+7. Query-to-Analytics Mapping (Examples)
+7.1 Sentiment Trend
+
+User Question:
+“What was the sentiment trend last week?”
+
+Computation:
+
+Filter posts where week == last_week
+Group by date
+Compute mean(sentiment)
+
+
+Output Data:
+
+date        avg_sentiment
+2025-01-10     -0.12
+2025-01-11      0.08
+
+7.2 Topic Analysis
+
+User Question:
+“What were people talking about last week?”
+
+Computation:
+
+Filter last_week
+Group by topic_id
+Count posts per topic
+Retrieve representative posts per topic
+
+7.3 Complaint Detection
+
+Definition of Complaint:
+
+sentiment == -1 AND high-frequency topic
+
+
+Computation:
+
+Filter sentiment == -1
+Group by topic_id
+Rank by frequency
+
+8. LangGraph Execution Model
+8.1 State Definition
+AnalyticsState:
+  question: string
+  query_type: string
+  dataframe: DataFrame
+  result: dict
+
+8.2 Graph Control Logic
+Entry → classify_query
+        ↓
+    if sentiment_trend → sentiment_node
+    if top_topics → topic_node
+    if complaints → complaints_node
+        ↓
+    summarize_results
+
+
+No fallback nodes exist.
+Unsupported paths terminate with an error.
+
+9. LLM Usage Rules (Hard Constraints)
+
+LLMs are allowed to:
+
+Interpret user intent
+
+Convert analytics results into natural language summaries
+
+LLMs are NOT allowed to:
+
+Compute metrics
+
+Guess trends
+
+Invent explanations
+
+Fill missing data
+
+Before response generation:
+
+assert analytics_result is not empty
+
+10. Deployment Architecture
+Backend
+
+FastAPI
+
+LangGraph orchestration
+
+Cached analytics (Parquet / Pickle)
+
+FAISS for embedding search (optional)
+
+Frontend
+
+Streamlit UI
+
+Natural language input
+
+Charts (trend, topics)
+
+Hosting
+
+Backend: Render / Railway
+
+Frontend: Streamlit Cloud
+
+11. Validation Principle
+
+For every answer, the system must satisfy:
+
+“Which data points support this conclusion?”
+
+If the system cannot trace an answer back to:
+
+specific records
+
+specific dates
+
+specific aggregates
+
+Then the answer must not be generated.
+
+12. Project Outcome
+
+The final system:
+
+Enables non-technical users to ask analytical questions in natural language
+
+Produces only data-backed, explainable answers
+
+Uses LangGraph to enforce deterministic execution
+
+Meets enterprise requirements for trust, auditability, and correctness
+
+13. One-Line Summary
+
+This project implements a LangGraph-orchestrated natural language analytics system where LLMs plan and explain, embeddings provide semantic structure, and all insights are computed deterministically from real data.

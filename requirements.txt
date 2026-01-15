@@ -1,0 +1,11 @@
+pandas
+duckdb
+scikit-learn
+numpy
+langgraph
+langchain
+langchain-community
+langchain-openai
+textblob
+streamlit
+python-dotenv
