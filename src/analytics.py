@@ -5,6 +5,7 @@ import os
 import requests
 
 DB_PATH = os.path.join(os.path.dirname(__file__), '../data/analytics.duckdb')
+DB_FULL_PATH = os.path.join(os.path.dirname(__file__), '../data/analytics_large.duckdb')
 
 def ensure_database():
     if not os.path.exists(DB_PATH):
@@ -26,6 +27,11 @@ def ensure_database():
             print("Warning: Database missing and DUCKDB_URL not set.")
 
 def get_connection():
+    # Prioritize Large/Full DB (Local Dev with Embeddings)
+    if os.path.exists(DB_FULL_PATH):
+        # We assume if it exists, it's valid.
+        return duckdb.connect(DB_FULL_PATH, read_only=True)
+        
     ensure_database()
     return duckdb.connect(DB_PATH, read_only=True)
 
