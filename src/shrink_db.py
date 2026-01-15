@@ -10,7 +10,7 @@ if os.path.exists(target):
 print("Creating shrinked database...")
 con = duckdb.connect(target)
 con.execute(f"ATTACH '{source}' AS old")
-con.execute("CREATE TABLE posts AS SELECT id, uniqueid, postcontent, createddate, sentiment, topic_id FROM old.posts")
+con.execute("CREATE TABLE posts AS SELECT id, uniqueid, postcontent, createddate, CAST(createddate AS DATE) as date, sentiment, topic_id FROM old.posts")
 con.close()
 
 size = os.path.getsize(target) / (1024*1024)
