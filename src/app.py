@@ -9,9 +9,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.graph import app as graph_app
 
-st.set_page_config(page_title="Locobuzz Analytics", layout="wide")
+st.set_page_config(page_title="Natural Language Analytics Engine", layout="wide")
 
-st.title("Locobuzz AI Analytics")
+st.title("Natural Language Analytics Engine")
 st.markdown("Ask questions about your social media data. Powered by LangGraph & Deterministic Analytics.")
 
 with st.sidebar:
