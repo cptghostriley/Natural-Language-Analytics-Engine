@@ -43,41 +43,7 @@ def get_dataset_bounds():
     finally:
         con.close()
 
-def sentiment_trend(weeks_back=4):
-    """
-    Returns daily average sentiment for the last N weeks.
-    """
-    con = get_connection()
-    # Calculate start date relative to max date in DB to ensure we have data
-    max_date = con.execute("SELECT MAX(date) FROM posts").fetchone()[0]
-    if not max_date:
-        return {}
-    
-    # Logic: Filter last N weeks
-    # For now, let's just return daily stats for the dataset or time window
-    query = """
-    SELECT date, AVG(sentiment) as avg_sentiment, COUNT(*) as volume
-    FROM posts
-    WHERE date >= ?
-    GROUP BY date
-    ORDER BY date ASC
-    """
-    # Simply defaulting to a reasonable start date if not provided, or dynamic
-    # Ideally should receive specific date range filter from the "State"
-    
-    # Determine start date
-    # If weeks_back is passed, we go back from max_date
-    import datetime as dt
-    if isinstance(max_date, str):
-         # DuckDB might return date object or string depending on version/driver
-         # usually datetime.date
-         pass
-    
-    # Let's just grab everything for now or logic inside the graph will filter?
-    # The requirement says: "Filter posts where week == last_week" for specific questions.
-    # We will build generic functions that accept start/end dates.
-    con.close()
-    pass
+
 
 def execute_analytics_query(query_type, filters=None):
     """
