@@ -1,10 +1,32 @@
 import duckdb
 import pandas as pd
 from datetime import datetime, timedelta
+import os
+import requests
 
-DB_PATH = "data/analytics.duckdb"
+DB_PATH = os.path.join(os.path.dirname(__file__), '../data/analytics.duckdb')
+
+def ensure_database():
+    if not os.path.exists(DB_PATH):
+        url = os.environ.get("DUCKDB_URL")
+        if url:
+            print(f"Downloading database from {url}...")
+            # Ensure dir exists
+            os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+            try:
+                with requests.get(url, stream=True) as r:
+                    r.raise_for_status()
+                    with open(DB_PATH, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=1024*1024): # 1MB chunks
+                            f.write(chunk)
+                print("Download complete.")
+            except Exception as e:
+                print(f"Failed to download DB: {e}")
+        else:
+            print("Warning: Database missing and DUCKDB_URL not set.")
 
 def get_connection():
+    ensure_database()
     return duckdb.connect(DB_PATH, read_only=True)
 
 def get_dataset_bounds():

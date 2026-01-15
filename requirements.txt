@@ -9,3 +9,4 @@ langchain-openai
 textblob
 streamlit
 python-dotenv
+requests
