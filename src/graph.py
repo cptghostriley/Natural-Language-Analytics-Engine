@@ -9,7 +9,9 @@ import os
 import json
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+# Robustly load .env from project root
+env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+load_dotenv(env_path, override=True)
 
 from src.analytics import execute_analytics_query, get_dataset_bounds
 from datetime import datetime, timedelta
@@ -45,24 +47,23 @@ class AnalyticsState(TypedDict):
     resolved_end: Optional[str]
 
 # 2. LLM Setup
-api_key = os.environ.get("OPENAI_API_KEY")
 base_url = os.environ.get("OPENAI_API_BASE") # Optional, for OpenRouter/Groq
 model_name = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
-if api_key:
+if key:
     # Production / Cloud Mode (OpenAI, OpenRouter, Groq, etc.)
     print(f"Using Cloud LLM: {model_name} (Base: {base_url or 'Default'})")
-    llm = ChatOpenAI(model=model_name, base_url=base_url, api_key=api_key, max_retries=3)
+    llm = ChatOpenAI(model=model_name, base_url=base_url, api_key=key, max_retries=3)
     summary_llm = llm.bind(temperature=0.3)
 else:
     # Local / Dev Mode
+    print("Using Local Ollama")
     try:
-        print("Using Local Ollama (Qwen 2.5 7B)")
-        llm = ChatOllama(model="qwen2.5:7b", format="json") 
-        summary_llm = ChatOllama(model="qwen2.5:7b")
-    except Exception as e:
-        print(f"Warning: Failed to init Ollama ({e}). Falling back to OpenAI (expecting key).")
-        llm = ChatOpenAI(model="gpt-4o-mini")
+        llm = ChatOllama(model="qwen2.5:7b", temperature=0)
+        summary_llm = llm
+    except:
+        # Fallback to OpenAI definition if Ollama fails init (though ChatOllama is lazy)
+        llm = ChatOpenAI(api_key="sk-dummy", base_url="http://localhost:11434/v1")
         summary_llm = llm
 
 # 3. Nodes
