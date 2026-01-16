@@ -19,16 +19,39 @@ def get_db_path():
 
 def get_embedding(text):
     """
-    Generates embedding using the local consistent model (all-MiniLM-L6-v2).
+    Generates 384-dim embedding.
+    Priority: 
+    1. HF Cloud API (Lightweight for Cloud app)
+    2. Local SentenceTransformer (Callback)
     """
+    # 1. Try HF Cloud API (Requires HUGGINGFACEHUB_API_TOKEN)
+    hf_token = os.environ.get("HUGGINGFACEHUB_API_TOKEN")
+    if hf_token:
+        try:
+             from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+             model_name = "sentence-transformers/all-MiniLM-L6-v2"
+             embeddings = HuggingFaceInferenceAPIEmbeddings(
+                api_key=hf_token, 
+                model_name=model_name
+             )
+             vec = embeddings.embed_query(text)
+             if len(vec) == 384:
+                 return vec
+             print(f"HF API returned wrong dim: {len(vec)}")
+        except Exception as e:
+             print(f"HF API Embedding failed: {e}")
+
+    # 2. Try Local Model
     try:
         from sentence_transformers import SentenceTransformer
-        # We must use the same model as reindex.py
         model = SentenceTransformer('all-MiniLM-L6-v2') 
         return model.encode(text).tolist()
     except Exception as e:
         print(f"Local Embedding failed: {e}")
-        return []
+    
+    # 3. Fail Safe
+    print("CRITICAL: Could not generate embedding. Returning zero vector.")
+    return [0.0] * 384
 
 def search_semantic(query, filters=None, top_k=5):
     """
