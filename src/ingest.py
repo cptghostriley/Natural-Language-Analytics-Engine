@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 
 # Configuration
-INPUT_CSV = "october_data_bedrock_embeddings_part_0_176748_20251030_225407.csv"
+INPUT_CSV = "data/october_data_bedrock_embeddings_part_0_176748_20251030_225407.csv"
 DB_PATH = "data/analytics.duckdb"
 
 def get_sentiment(text):
@@ -44,7 +44,12 @@ def process_data():
     # Read csv using pandas
     # On error_bad_lines, we skip to avoid crashing on malformed CSV rows
     try:
-        df = pd.read_csv(INPUT_CSV, on_bad_lines='skip')
+        limit = int(os.environ.get("INGEST_LIMIT", 0))
+        if limit > 0:
+            print(f"Ingesting limited rows: {limit}")
+            df = pd.read_csv(INPUT_CSV, on_bad_lines='skip', nrows=limit)
+        else:
+            df = pd.read_csv(INPUT_CSV, on_bad_lines='skip')
     except Exception as e:
         print(f"Error reading CSV: {e}")
         return
@@ -126,16 +131,26 @@ def process_data():
     print("Saving to DuckDB...")
     con = duckdb.connect(DB_PATH)
     
-    # Convert dates to string or datetime for DuckDB compatibility if needed
-    # DuckDB handles pandas timestamp well
-    
-    # Drop object column
+    # Ensure DuckDB treats the embedding list as a native SQL list/array
+    # We do NOT drop embedding_vec anymore.
+    # We rename it to 'embedding' for clarity in the DB (the original CSV col was 'embedding' but stringified)
+    df['embedding'] = df['embedding_vec']
     df_save = df.drop(columns=['embedding_vec'])
     
+    # Create table
     con.execute("CREATE OR REPLACE TABLE posts AS SELECT * FROM df_save")
-    # Verify
+    
+    # Verify count
     count = con.execute("SELECT count(*) FROM posts").fetchone()[0]
     print(f"Saved {count} rows to database.")
+    
+    # Verify embedding storage
+    try:
+        sample = con.execute("SELECT embedding FROM posts WHERE embedding IS NOT NULL LIMIT 1").fetchone()
+        if sample:
+            print(f"Sample embedding stored (dim={len(sample[0])})")
+    except Exception as e:
+        print(f"Warning: Embedding storage verification failed: {e}")
     
     con.close()
     print("Ingestion complete.")

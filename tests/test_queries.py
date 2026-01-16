@@ -58,7 +58,8 @@ if __name__ == "__main__":
         "What was the sentiment trend for our brand last week?",
         "Which influencers drove the most engagement during our campaign?",
         "What are users complaining about?",
-        "What is the sentiment trend in October 2025?" # Positive control for data
+        "What is the sentiment trend in October 2025?", # Positive control for data
+        "Show me examples of bad service." # Semantic Search Test
     ]
     
     for case in test_cases:

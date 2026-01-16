@@ -27,11 +27,9 @@ def ensure_database():
             print("Warning: Database missing and DUCKDB_URL not set.")
 
 def get_connection():
-    # Prioritize Large/Full DB (Local Dev with Embeddings)
-    if os.path.exists(DB_FULL_PATH):
-        # We assume if it exists, it's valid.
-        return duckdb.connect(DB_FULL_PATH, read_only=True)
-        
+    # WE USE THE RE-INDEXED DB (analytics.duckdb)
+    # It now contains both the data AND the valid 384-dim embeddings.
+    # We skip 'analytics_large.duckdb' to avoid the old incompatible embeddings.
     ensure_database()
     return duckdb.connect(DB_PATH, read_only=True)
 
@@ -213,11 +211,6 @@ def execute_analytics_query(query_type, filters=None):
             ORDER BY createddate DESC
             LIMIT 10
             """
-            # Note: params already has base_where params. Need to append search_term.
-            # But wait, base_where params are in 'params' list.
-            # I need to be careful about parameter order.
-            # base_where placeholders come first. ILIKE placeholder is last.
-            # correct.
             
             df = con.execute(sql, params).fetchdf()
             # Convert date

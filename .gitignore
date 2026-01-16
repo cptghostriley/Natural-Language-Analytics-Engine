@@ -5,4 +5,4 @@ __pycache__/
 .streamlit/
 data/analytics_full_backup.duckdb
 data/analytics_large.duckdb
-!data/analytics.duckdb
+data/analytics.duckdb
