@@ -6,3 +6,4 @@ __pycache__/
 data/analytics_full_backup.duckdb
 data/analytics_large.duckdb
 data/analytics.duckdb
+Implementation_Plan_Phase_1_2_3.md
