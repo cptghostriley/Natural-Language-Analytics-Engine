@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
 load_dotenv(env_path, override=True)
 
-from src.analytics import execute_analytics_query, get_dataset_bounds
+from src.analytics import execute_analytics_query, get_dataset_bounds, execute_custom_query
 from src.retrieve import search_semantic
 from datetime import datetime, timedelta
 
@@ -43,6 +43,7 @@ class AnalyticsState(TypedDict):
     filters: Optional[Dict[str, Any]]
     analytics_result: Optional[Any]
     semantic_result: Optional[List[Dict]] # Added field
+    sql_spec: Optional[Dict[str, Any]] # Phase 2: Safe SQL Spec
     final_answer: Optional[str]
     error: Optional[str]
     resolved_start: Optional[str]
@@ -87,20 +88,35 @@ def classify_query(state: AnalyticsState):
     6. influencer_analysis
     7. keyword_search ("Find posts about X" - uses specific keyword match)
     8. semantic_search ("What are people saying about X?", "Show me examples of bad service", "Why is sentiment low?")
+    9. custom_analytics (Safe Dynamic Aggregation)
+       Use this for ANY quantitative question not covered above, such as:
+       - "How many negative posts last week?"
+       - "Average sentiment by topic"
+       - "Volume per month"
     
     Task:
-    1. Identify query_type. If query is asking for reasons, examples, or qualitative insights, choose "semantic_search".
+    1. Identify query_type. 
+       - If qualitative/examples -> semantic_search
+       - If standard report -> types 1-6
+       - If specific aggregation -> custom_analytics
+       
     2. Extract filters:
        - If explicit dates: "start_date", "end_date" (YYYY-MM-DD).
        - If relative time: "time_expr" (enum: "last_week", "this_week", "last_7_days", "this_month", "last_month").
        - If keyword search: "keyword" (the string to search).
-       - Ignore vague terms like "campaign" (return empty filters).
        - Do NOT resolve dates yourself.
+       
+    3. If query_type is "custom_analytics", extract "sql_spec":
+       - agg: "COUNT", "AVG", "SUM", "MIN", "MAX"
+       - metric: "sentiment" (for avg/min/max), "*" (for count), "id"
+       - group_by: "date", "week", "month", "year", "topic_id", "sentiment" (or null if scalar)
+       - limit: integer (default 10)
     
     Output JSON ONLY:
     {{
         "query_type": "...",
-        "filters": {{ ... }}
+        "filters": {{ ... }},
+        "sql_spec": {{ ... }} (optional)
     }}
     """
     
@@ -115,7 +131,8 @@ def classify_query(state: AnalyticsState):
         result = chain.invoke({"question": question})
         return {
             "query_type": result.get("query_type", "unsupported"),
-            "filters": result.get("filters", {})
+            "filters": result.get("filters", {}),
+            "sql_spec": result.get("sql_spec", {})
         }
     except Exception as e:
         return {"error": str(e), "query_type": "error"}
@@ -140,6 +157,10 @@ def resolve_time_range(state: AnalyticsState):
         if dataset_max_str == 'None':
              return {"error": "Dataset is empty."}
              
+        # Robust parsing (handle YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+        dataset_max_str = dataset_max_str.split(" ")[0]
+        dataset_min_str = dataset_min_str.split(" ")[0]
+        
         max_d = datetime.strptime(dataset_max_str, "%Y-%m-%d").date()
         min_d = datetime.strptime(dataset_min_str, "%Y-%m-%d").date()
     except Exception as e:
@@ -202,6 +223,16 @@ def execute_analytics(state: AnalyticsState):
     q_type = state["query_type"]
     filters = state["filters"]
     
+    if q_type == "custom_analytics":
+        spec = state.get("sql_spec", {})
+        if not spec:
+            return {"error": "Custom analytics requested but no SQL spec generated."}
+        # Merge resolved filters into spec filters
+        spec["filters"] = {**spec.get("filters", {}), **filters}
+        
+        result = execute_custom_query(spec)
+        return {"analytics_result": result}
+        
     if q_type == "unsupported":
         return {"error": "Query type not supported."}
         

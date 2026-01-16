@@ -8,23 +8,38 @@ DB_PATH = os.path.join(os.path.dirname(__file__), '../data/analytics.duckdb')
 DB_FULL_PATH = os.path.join(os.path.dirname(__file__), '../data/analytics_large.duckdb')
 
 def ensure_database():
-    if not os.path.exists(DB_PATH):
-        url = os.environ.get("DUCKDB_URL")
-        if url:
-            print(f"Downloading database from {url}...")
-            # Ensure dir exists
-            os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-            try:
-                with requests.get(url, stream=True) as r:
-                    r.raise_for_status()
-                    with open(DB_PATH, 'wb') as f:
-                        for chunk in r.iter_content(chunk_size=1024*1024): # 1MB chunks
-                            f.write(chunk)
-                print("Download complete.")
-            except Exception as e:
-                print(f"Failed to download DB: {e}")
+    if os.path.exists(DB_PATH):
+        # Check if valid (simple size check > 1MB)
+        if os.path.getsize(DB_PATH) < 1024 * 1024:
+            print(f"Database found but too small ({os.path.getsize(DB_PATH)} bytes). Re-downloading...")
+            os.remove(DB_PATH)
         else:
-            print("Warning: Database missing and DUCKDB_URL not set.")
+            return
+
+    url = os.environ.get("DUCKDB_URL")
+    if url:
+        print(f"Downloading database from {url}...")
+        # Ensure dir exists
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        try:
+            with requests.get(url, stream=True) as r:
+                r.raise_for_status()
+                with open(DB_PATH, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=1024*1024): # 1MB chunks
+                        f.write(chunk)
+            print("Download complete.")
+            
+            # Verify size check again
+            if os.path.exists(DB_PATH) and os.path.getsize(DB_PATH) < 1024:
+                 print("Warning: Downloaded DB seems too small. Check DUCKDB_URL.")
+                 
+        except Exception as e:
+            print(f"Failed to download DB: {e}")
+            # Don't leave corrupted file
+            if os.path.exists(DB_PATH):
+                os.remove(DB_PATH)
+    else:
+        print("Warning: Database missing and DUCKDB_URL not set.")
 
 def get_connection():
     # WE USE THE RE-INDEXED DB (analytics.duckdb)
@@ -36,7 +51,8 @@ def get_connection():
 def get_dataset_bounds():
     con = get_connection()
     try:
-        res = con.execute("SELECT MIN(date), MAX(date) FROM posts").fetchone()
+        # Cast to DATE to remove time components at source
+        res = con.execute("SELECT CAST(MIN(date) AS DATE), CAST(MAX(date) AS DATE) FROM posts").fetchone()
         return {"min_date": str(res[0]), "max_date": str(res[1])}
     finally:
         con.close()
@@ -229,6 +245,126 @@ def execute_analytics_query(query_type, filters=None):
         con.close()
         
     return result
+
+# ---------------------------------------------------------
+# PHASE 2: Safe Constrained SQL Engine
+# ---------------------------------------------------------
+
+ALLOWED_AGGS = {"COUNT", "AVG", "SUM", "MIN", "MAX"}
+ALLOWED_METRICS = {"*", "sentiment", "id"}
+ALLOWED_GROUPS = {"date", "week", "month", "year", "topic_id", "sentiment"}
+
+def validate_sql_components(spec):
+    """
+    Validates components against allowlists.
+    spec = {
+        "agg": "AVG",
+        "metric": "sentiment",
+        "group_by": "date",
+        "filters": {...}
+    }
+    """
+    agg = spec.get("agg", "COUNT").upper()
+    metric = spec.get("metric", "*").lower()
+    group = spec.get("group_by", "").lower()
+    
+    if agg not in ALLOWED_AGGS:
+        raise ValueError(f"Aggregation '{agg}' not allowed.")
+        
+    if metric not in ALLOWED_METRICS:
+        raise ValueError(f"Metric '{metric}' not allowed.")
+    
+    # Check if group is allowed (empty is fine for scalar)
+    if group and group not in ALLOWED_GROUPS:
+         raise ValueError(f"Grouping by '{group}' not allowed.")
+         
+    return True
+
+def generate_safe_sql(spec):
+    """
+    Generates SQL from a validated spec string/dict.
+    Supports 3 templates:
+    1. Time Series (Group by time)
+    2. Category Breakdown (Group by topic/sentiment)
+    3. Scalar (Total count/avg)
+    """
+    validate_sql_components(spec)
+    
+    agg = spec.get("agg", "COUNT").upper()
+    metric = spec.get("metric", "*")
+    group = spec.get("group_by")
+    limit = spec.get("limit", 10)
+    filters = spec.get("filters", {})
+    
+    # 1. Build Base Where
+    where_clauses = []
+    params = []
+    
+    if filters.get('start_date'):
+        where_clauses.append("date >= ?")
+        params.append(filters['start_date'])
+    if filters.get('end_date'):
+        where_clauses.append("date <= ?")
+        params.append(filters['end_date'])
+    # Can extend with other safe filters here
+    
+    base_where = " AND ".join(where_clauses) if where_clauses else "1=1"
+    
+    # 2. Select Template
+    sql = ""
+    
+    if group:
+        # Template 1 & 2: Grouping (Time or Category)
+        # Handle 'sentiment' metric special case
+        metric_sql = "*" if metric == "*" else metric
+        
+        sql = f"""
+        SELECT {group}, {agg}({metric_sql}) as val
+        FROM posts
+        WHERE {base_where}
+        GROUP BY {group}
+        ORDER BY val DESC
+        LIMIT {limit}
+        """
+        # If time series, usually we want order by time, not value
+        if group in ["date", "week", "month", "year"]:
+             sql = f"""
+            SELECT {group}, {agg}({metric_sql}) as val
+            FROM posts
+            WHERE {base_where}
+            GROUP BY {group}
+            ORDER BY {group}
+            """
+            
+    else:
+        # Template 3: Scalar
+        metric_sql = "*" if metric == "*" else metric
+        sql = f"""
+        SELECT {agg}({metric_sql}) as val
+        FROM posts
+        WHERE {base_where}
+        """
+        
+    return sql, params
+
+def execute_custom_query(spec):
+    """
+    Executes a safe custom query.
+    """
+    try:
+        sql, params = generate_safe_sql(spec)
+        con = get_connection()
+        try:
+             df = con.execute(sql, params).fetchdf()
+             # Convert numeric/date types for JSON serialization
+             if 'date' in df.columns:
+                 df['date'] = df['date'].astype(str)
+                 
+             return df.to_dict(orient='records')
+        finally:
+             con.close()
+    except Exception as e:
+        return {"error": f"Custom Query Failed: {e}"}
 
 if __name__ == "__main__":
     # Test

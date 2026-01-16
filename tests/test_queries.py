@@ -56,6 +56,7 @@ if __name__ == "__main__":
     test_cases = [
         "What are the top topics?", 
         "What was the sentiment trend for our brand last week?",
+        "What is the average sentiment per topic?", # Custom Aggregation Test
         "Which influencers drove the most engagement during our campaign?",
         "What are users complaining about?",
         "What is the sentiment trend in October 2025?", # Positive control for data
