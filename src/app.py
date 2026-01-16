@@ -15,7 +15,7 @@ st.title("Natural Language Analytics Engine")
 st.markdown("Ask questions about your social media data. Powered by LangGraph & Deterministic Analytics.")
 
 with st.sidebar:
-    st.header("Supported Queries")
+    st.header("Suggested Queries")
     st.markdown("""
     - **Sentiment Trend**: "How is sentiment changing?"
     - **Volume Trend**: "Post volume over time?"

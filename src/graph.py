@@ -44,6 +44,7 @@ class AnalyticsState(TypedDict):
     analytics_result: Optional[Any]
     semantic_result: Optional[List[Dict]] # Added field
     sql_spec: Optional[Dict[str, Any]] # Phase 2: Safe SQL Spec
+    reasoning_trace: Optional[List[str]] # Phase 3: Hybrid Reasoning Trace
     final_answer: Optional[str]
     error: Optional[str]
     resolved_start: Optional[str]
@@ -78,6 +79,7 @@ def classify_query(state: AnalyticsState):
     question = state["question"]
     
     # We do NOT inject current date. Time is resolved relative to dataset.
+    # We do NOT inject current date. Time is resolved relative to dataset.
     system_prompt = """You are an intent classifier for a social media analytics system.
     Supported Query Types:
     1. sentiment_trend 
@@ -87,18 +89,19 @@ def classify_query(state: AnalyticsState):
     5. weekly_summary
     6. influencer_analysis
     7. keyword_search ("Find posts about X" - uses specific keyword match)
-    8. semantic_search ("What are people saying about X?", "Show me examples of bad service", "Why is sentiment low?")
-    9. custom_analytics (Safe Dynamic Aggregation)
-       Use this for ANY quantitative question not covered above, such as:
-       - "How many negative posts last week?"
-       - "Average sentiment by topic"
-       - "Volume per month"
+    8. semantic_search ("Show examples...", "What are people saying...")
+    9. custom_analytics (Safe Dynamic Aggregation: "How many...", "Average...")
+    10. root_cause ("Why is sentiment low?", "Explain the drop in volume", "What caused the spike?")
     
     Task:
+    - If the user asks "Why", "Reason for", "Cause of", or "Explain X": 
+      -> Select "root_cause".
+    
     1. Identify query_type. 
        - If qualitative/examples -> semantic_search
        - If standard report -> types 1-6
        - If specific aggregation -> custom_analytics
+       - If reasoning/why -> root_cause
        
     2. Extract filters:
        - If explicit dates: "start_date", "end_date" (YYYY-MM-DD).
@@ -216,6 +219,80 @@ def resolve_time_range(state: AnalyticsState):
         "resolved_end": current_end
     }
 
+def execute_root_cause_analysis(state: AnalyticsState):
+    """
+    Phase 3: Hybrid Reasoning.
+    1. Analyze Quantitative Trend (Analytics).
+    2. Identify Anomalies (Lowest sentiment, Highest Spikes).
+    3. Retrieve Qualitative Evidence for those specific moments (Semantic).
+    """
+    question = state["question"].lower()
+    filters = state["filters"]
+    trace = []
+    
+    # Step 1: determine what to analyze based on question
+    # Default to sentiment trend if ambiguous
+    metric_type = "sentiment_trend" 
+    if "volume" in question or "traffic" in question:
+        metric_type = "volume_trend"
+        
+    trace.append(f"Step 1: Analyzed {metric_type} to find anomalies.")
+    
+    # Run Analytics
+    trend_data = execute_analytics_query(metric_type, filters)
+    
+    if not trend_data or isinstance(trend_data, dict) and "error" in trend_data:
+        return {"error": "Could not fetch trend data for analysis.", "reasoning_trace": trace}
+        
+    # Step 2: Find Anomaly (Simplistic: Find Min/Max)
+    # Convert to DataFrame for easy handling
+    import pandas as pd
+    try:
+        df = pd.DataFrame(trend_data)
+        if df.empty:
+             return {"error": "Trend data is empty.", "reasoning_trace": trace}
+
+        if metric_type == "sentiment_trend":
+            # Find worst day
+            target = df.loc[df['avg_sentiment'].idxmin()]
+            target_date = str(target['date']).split(" ")[0] # YYYY-MM-DD
+            target_val = target['avg_sentiment']
+            anomaly_desc = f"Lowest sentiment ({target_val:.2f}) observed on {target_date}"
+            
+        else: # volume
+            # Find highest volume
+            target = df.loc[df['volume'].idxmax()]
+            target_date = str(target['date']).split(" ")[0]
+            target_val = target['volume']
+            anomaly_desc = f"Highest volume ({target_val}) observed on {target_date}"
+            
+        trace.append(f"Step 2: Identified anomaly: {anomaly_desc}.")
+        
+        # Step 3: Targeted Semantic Search
+        # We drill down into that specific date
+        context_filters = filters.copy()
+        context_filters["start_date"] = target_date
+        context_filters["end_date"] = target_date # One day drill-down
+        
+        search_q = f"Reasons for {metric_type} on {target_date}"
+        if "sentiment" in metric_type:
+            search_q = "complaints and negative feedback"
+            
+        # Add reasoning to context for summary
+        trace.append(f"Step 3: Retrieving evidence for {target_date}...")
+        
+        # We fetch slightly more documents for context
+        semantic_data = search_semantic(search_q, filters=context_filters, top_k=5)
+        
+        return {
+            "analytics_result": trend_data, # Full context
+            "semantic_result": semantic_data, # Specific evidence
+            "reasoning_trace": trace
+        }
+        
+    except Exception as e:
+        return {"error": f"Root cause analysis failed: {e}", "reasoning_trace": trace}
+
 def execute_analytics(state: AnalyticsState):
     """
     Executes the deterministic analytics.
@@ -223,6 +300,10 @@ def execute_analytics(state: AnalyticsState):
     q_type = state["query_type"]
     filters = state["filters"]
     
+    # Handle Root Cause Routing explicitly if not done in router
+    if q_type == "root_cause":
+        return execute_root_cause_analysis(state)
+        
     if q_type == "custom_analytics":
         spec = state.get("sql_spec", {})
         if not spec:
@@ -261,6 +342,7 @@ def summarize_results(state: AnalyticsState):
     semantic_res = state.get("semantic_result")
     q_type = state.get("query_type")
     question = state.get("question")
+    trace = state.get("reasoning_trace", [])
     
     # Resolved timeframe
     start_d = state.get("resolved_start", "unknown")
@@ -276,6 +358,9 @@ def summarize_results(state: AnalyticsState):
     User Question: {question}
     Query Type: {q_type}
     Timeframe: {start_d} to {end_d}
+    
+    Analysis Trace:
+    {trace}
     
     Computed Data:
     {data}
@@ -299,6 +384,7 @@ def summarize_results(state: AnalyticsState):
     try:
         data_str = json.dumps(result, indent=2, default=str) if result else "None"
         sem_str = json.dumps(semantic_res, indent=2, default=str) if semantic_res else "None"
+        trace_str = "\\n".join(trace) if trace else "Standard Execution"
         
         answer = chain.invoke({
             "question": question,
@@ -306,7 +392,8 @@ def summarize_results(state: AnalyticsState):
             "data": data_str,
             "semantic_data": sem_str,
             "start_d": start_d,
-            "end_d": end_d
+            "end_d": end_d,
+            "trace": trace_str
         })
         return {"final_answer": answer}
     except Exception as e:
