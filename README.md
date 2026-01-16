@@ -5,26 +5,24 @@
 [![DuckDB](https://img.shields.io/badge/DuckDB-FFF000?style=flat&logo=duckdb&logoColor=black)](https://duckdb.org)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Orchestration-orange)](https://langchain-ai.github.io/langgraph/)
 
-A production-grade, LangGraph-orchestrated social media analytics system designed for deterministic accuracy and natural language interaction.
+A production-grade, LangGraph-orchestrated social media analytics system designed for deterministic accuracy, semantic search, and hybrid reasoning.
 
 ## 🚀 Features
 
-*   **Natural Language Querying**: Ask questions like "How did sentiment change last week?" or "Who are the top influencers?".
+*   **Natural Language Querying**: Ask questions like "How did sentiment change last week?", "Show me examples of bad service", or "Why is sentiment low?".
 *   **Deterministic Analytics**: All numbers are computed via **SQL** on a **DuckDB** database. No LLM hallucinations on metrics.
-*   **Time-Aware Resolution**: Relative time terms ("last week", "this month") are auto-resolved relative to the **dataset's actual timeframe** (Oct 2025), not the system clock.
-*   **Production Logic**:
-    *   **Strict Disclosures**: All answers cite the exact date range used.
-    *   **Robust Ops**: Auto-retries on API rate limits, gracefull fallbacks.
-    *   **Hybrid AI**: Supports Cloud (OpenRouter/OpenAI) and Local (Ollama) models.
+*   **Semantic Search (New)**: Vector-based retrieval to find qualitative evidence (posts/tweets) matching a user's intent, even without keyword matches.
+*   **Hybrid Reasoning (New)**: Automates Root Cause Analysis by combining quantitative anomaly detection with qualitative evidence retrieval.
+*   **Time-Aware Resolution**: Relative time terms ("last week", "this month") are auto-resolved relative to the **dataset's actual timeframe** (Oct 2025).
 
 ## 🛠️ Architecture
 
 1.  **Frontend**: Streamlit (Visualization & Chat)
-2.  **Orchestrator**: LangGraph (State Machine: `Classify` -> `Resolve Time` -> `Execute` -> `Summarize`)
-3.  **Data Layer**: DuckDB (Embedded SQL, High Performance)
+2.  **Orchestrator**: LangGraph (State Machine: `Classify` -> `Resolve Time` -> `Route` -> [`Analytics` | `Retrieval` | `Hybrid`] -> `Summarize`)
+3.  **Data Layer**: DuckDB (Unified Hybrid Database) - Stores both structured analytics data and 384-dimensional vector embeddings.
 4.  **Intelligence**:
-    *   **Cloud (Default)**: Google Gemini 2.0 Flash (via OpenRouter) or OpenAI GPT-4o.
-    *   **Local (Fallback)**: Qwen 2.5 7B via Ollama.
+    *   **LLM**: GPT-4o / Llama 3.3 (via Groq/OpenRouter) for intent understanding and synthesis.
+    *   **Embeddings**: `sentence-transformers/all-MiniLM-L6-v2` (Local or via HuggingFace Inference API).
 
 ## 📦 Setup & Installation
 
@@ -36,76 +34,52 @@ A production-grade, LangGraph-orchestrated social media analytics system designe
 2.  **Configure Environment**
     Create a `.env` file in the root directory:
     ```env
-    # Recommended: Groq (Free & Fast)
+    # Recommended: Groq (Metric Speed)
     OPENAI_API_KEY=gsk_your_groq_key_here
     OPENAI_API_BASE=https://api.groq.com/openai/v1
     LLM_MODEL=llama-3.3-70b-versatile
     
-    # Alternative: OpenRouter / OpenAI
-    # OPENAI_API_KEY=sk-or-...
-    # OPENAI_API_BASE=https://openrouter.ai/api/v1
-    # LLM_MODEL=google/gemini-2.0-flash-exp:free
+    # Required for Robust Cloud Embeddings (Prevents OOM)
+    HUGGINGFACEHUB_API_TOKEN=hf_...
+    
+    # Database URL (Unified DB)
+    DUCKDB_URL=https://huggingface.co/datasets/Bhavin1905/Social-Media-Posts-Dataset-Embeddings-Included-DUCKDB/resolve/main/analytics.duckdb?download=true
     ```
 
-3.  **Data Ingestion** (If not already done)
-    Processes CSV, computes embeddings/sentiment, and loads DuckDB.
-    ```bash
-    $env:PYTHONPATH = "."; python src/ingest.py
-    ```
-
-4.  **Run Application**
+3.  **Run Application**
     ```bash
     $env:PYTHONPATH = "."; streamlit run src/app.py
     ```
 
 ## 🔍 Supported Queries
 
+### 1. Analytics (Quantitative)
 *   **Trends**: "Sentiment trend last week", "Volume over time".
 *   **Topics**: "What are the top topics?", "Key themes this month".
-*   **Influencers**: "Who are the top influencers?", "Who drove engagement during the campaign?"
-*   **Complaints**: "What are users complaining about?"
+*   **Flexible Aggregations**: "Average sentiment by topic", "Count of posts by week".
 
-## 📂 Dataset & Schema
+### 2. Semantic Search (Qualitative)
+*   **Examples**: "Show me examples of bad customer service."
+*   **Discovery**: "What are people saying about the new app update?"
 
-The system processes a historical social media dataset (October 2025). The following fields are critical for analytics:
+### 3. Hybrid Reasoning (Root Cause)
+*   **Diagnostics**: "Why is sentiment low?"
+*   **Explanation**: "Explain the drop in volume on Tuesday."
+    *   *System Flow*: Findings Anomaly -> Drills down Date -> Retrieves Evidence -> Synthesizes Answer.
 
-### **Source Fields**
-*   **`postcontent`**: The raw text content of the social media post. Used for:
-    *   Sentiment Analysis (TextBlob)
-    *   Topic Modeling (Clustering)
-    *   Influencer Extraction (Regex for `@mentions`)
-*   **`createddate`**: The timestamp of the post.
-    *   *Transformation*: Converted to `date` (YYYY-MM-DD) for daily/weekly aggregation.
-*   **`embedding`**: Pre-computed vector embeddings (Array).
-    *   Used for: K-Means Clustering to group similar posts into Topics.
-*   **`id`** / **`uniqueid`**: Unique record identifiers.
+## 💾 Database Strategy (Unified)
 
-### **Computed Fields (DuckDB)**
-*   **`sentiment`**: Polarity score (-1.0 to +1.0) derived from `postcontent`.
-*   **`topic_id`**: Cluster ID (0-19) assigned via K-Means on `embedding`.
-*   **`week`** / **`month`**: Derived time units for aggregation.
+The system now relies on a Single Source of Truth for maximum consistency:
 
-## 💾 Database Strategy
-
-To ensure instant cloud startup times (<5s) on Streamlit Community Cloud:
-
-1.  **Production DB (Repo)**: `data/analytics.duckdb`
-    *   **Size**: ~38MB
-    *   **Content**: Metadata, Content, Sentiment, Topics.
-    *   **Missing**: Vector Embeddings (Dropped to save RAM/Disk).
-    *   **Performance**: Lightning fast aggregations.
-
-2.  **Research DB (Hugging Face)**:
-    *   **Link**: [Social-Media-Posts-Dataset-Embeddings-Included-DUCKDB](https://huggingface.co/datasets/Bhavin1905/Social-Media-Posts-Dataset-Embeddings-Included-DUCKDB)
-    *   **Size**: ~1.4GB
-    *   **Content**: Includes 768-dim vector embeddings for RAG/Semantic Search.
-    *   **Usage**: Set `DUCKDB_URL` in secrets to auto-download this if needed (warning: high RAM usage).
-
-### **Utility Scripts**
-*   `src/optimize_db.py`: Drops embedding column and vacuums the DB.
-*   `src/shrink_db.py`: Creates a clean, small export of the DB.
+*   **File**: `data/analytics.duckdb` (Downloaded automatically from HuggingFace on startup).
+*   **Content**:
+    *   **Metadata**: `createddate`, `sentiment`, `topic_id`.
+    *   **Content**: `postcontent`.
+    *   **Vectors**: `embedding` (384-dimensional, `all-MiniLM-L6-v2`).
+*   **Size**: ~460MB.
+*   **Alignment**: The entire database was re-indexed locally to ensure vector dimensions match the lightweight reasoning model (384-dim), preventing crashes common with larger models.
 
 ## ⚠️ Important Notes
 
 *   **Dataset Timeframe**: The included dataset covers **October 2025**. Queries for "today" (Real-time) will return no data. Use relative terms ("Last week") which map to the *dataset's* last week (Oct 24-30).
-*   **Rate Limits**: If using Free Tier models (Gemini/Llama), you may occasionally see `429` errors. The system auto-retries 3 times.
+*   **Cloud Memory**: The system uses a "Cloud-First" strategy for embeddings. It attempts to use the **HuggingFace Inference API** for vectors to avoid loading the Transformer model into RAM, ensuring stability on free-tier cloud instances.
