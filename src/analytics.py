@@ -264,9 +264,9 @@ def validate_sql_components(spec):
         "filters": {...}
     }
     """
-    agg = spec.get("agg", "COUNT").upper()
-    metric = spec.get("metric", "*").lower()
-    group = spec.get("group_by", "").lower()
+    agg = (spec.get("agg") or "COUNT").upper()
+    metric = (spec.get("metric") or "*").lower()
+    group = (spec.get("group_by") or "").lower()
     
     if agg not in ALLOWED_AGGS:
         raise ValueError(f"Aggregation '{agg}' not allowed.")
@@ -290,8 +290,8 @@ def generate_safe_sql(spec):
     """
     validate_sql_components(spec)
     
-    agg = spec.get("agg", "COUNT").upper()
-    metric = spec.get("metric", "*")
+    agg = (spec.get("agg") or "COUNT").upper()
+    metric = spec.get("metric") or "*"
     group = spec.get("group_by")
     limit = spec.get("limit", 10)
     filters = spec.get("filters", {})

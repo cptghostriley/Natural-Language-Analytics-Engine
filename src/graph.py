@@ -121,6 +121,10 @@ def classify_query(state: AnalyticsState):
         "filters": {{ ... }},
         "sql_spec": {{ ... }} (optional)
     }}
+    
+    IMPORTANT: For general queries like "total mention count" with no time reference:
+    - Return "filters": {{}} (This implies "all_time")
+    - Return "sql_spec": {{"agg": "COUNT", "metric": "*", "group_by": null}}
     """
     
     prompt = ChatPromptTemplate.from_messages([
@@ -133,9 +137,9 @@ def classify_query(state: AnalyticsState):
     try:
         result = chain.invoke({"question": question})
         return {
-            "query_type": result.get("query_type", "unsupported"),
-            "filters": result.get("filters", {}),
-            "sql_spec": result.get("sql_spec", {})
+            "query_type": result.get("query_type") or "unsupported",
+            "filters": result.get("filters") or {},
+            "sql_spec": result.get("sql_spec") or {}
         }
     except Exception as e:
         return {"error": str(e), "query_type": "error"}
@@ -144,7 +148,7 @@ def resolve_time_range(state: AnalyticsState):
     """
     Resolves relative dates based on Dataset Max Date.
     """
-    filters = state.get("filters", {}) or {}
+    filters = state.get("filters") or {}
     q_type = state.get("query_type") # passed through
     
     if state.get("error") or q_type == "unsupported":
