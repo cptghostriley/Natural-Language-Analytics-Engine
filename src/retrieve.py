@@ -13,16 +13,10 @@ def get_db_path():
     return DB_PATH
 
 # Embedding Models
-# Ideally this should match the ingestion model.
-# If using the CSV from Bedrock, we need a Bedrock compatible function.
-# For now, we provide a placeholder wrapper.
 
 def get_embedding(text):
     """
     Generates 384-dim embedding.
-    Priority: 
-    1. HF Cloud API (Lightweight for Cloud app)
-    2. Local SentenceTransformer (Callback)
     """
     # 1. Try HF Cloud API (Requires HUGGINGFACEHUB_API_TOKEN)
     hf_token = os.environ.get("HUGGINGFACEHUB_API_TOKEN")
