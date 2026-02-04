@@ -1,0 +1,99 @@
+# design_documentation.txt
+
+# High-Level Design (HLD)
+
+## 1. System Architecture
+The system follows a **Modular Monolith** architecture with a clear separation between the User Interface, Orchestration Layer, and Data/Execution Layer. It is designed to be "Cloud-First" for embeddings but runs locally (or can be containerized) for execution.
+
+[User] -> [Frontend (Streamlit)] -> [Orchestrator (LangGraph)]
+
+The Orchestrator interacts with:
+1. **Intelligence Layer**:
+   - LLM (OpenRouter/Groq/Ollama) for intent understanding and synthesis.
+   - Embedding Model (HF API / Local) for vector generation.
+
+2. **Execution Layer**:
+   - Analytics Engine (DuckDB SQL) for structured queries.
+   - Retrieval Engine (Vector Search) for semantic search.
+
+Both engines read from the **Unified DuckDB** (Hybrid SQL + Vector).
+
+## 2. Key Components
+
+### A. Frontend (UI)
+*   **Technology**: Streamlit
+*   **Role**: Accepts user queries, visualizations (Charts/Tables), and session management.
+
+### B. Orchestrator (The "Brain")
+*   **Technology**: LangGraph
+*   **Role**: Manages query lifecycle via a State Machine.
+*   **Capabilities**:
+    *   **Classify**: Determines if query is Quantitative, Qualitative, or Hybrid.
+    *   **Resolve Time**: Maps relative terms ("last week") to the dataset's static timeframe (Oct 2025).
+    *   **Route**: directing flow to the correct execution node.
+
+### C. Data Layer (The "Memory")
+*   **Technology**: DuckDB (Hybrid SQL + Vector)
+*   **Deployment**: Single file (`analytics.duckdb`).
+*   **Strategy**: "Zero-ETL" runtime. Contains pre-computed 384-dim embeddings and clustered Topic IDs alongside raw text.
+
+---
+
+# Low-Level Design (LLD)
+
+## 1. Data Mode Schema (DuckDB)
+**Table**: `posts`
+- `postcontent` (VARCHAR): Raw text.
+- `createddate` (TIMESTAMP): Original timestamp.
+- `date` (DATE): Optimized date column.
+- `sentiment` (INTEGER): 1 (Pos), -1 (Neg), 0 (Neu).
+- `topic_id` (INTEGER): Pre-computed K-Means cluster ID (0-19).
+- `embedding` (FLOAT[384]): 384-dimensional vector (`all-MiniLM-L6-v2`).
+
+## 2. Orchestration Module (`src/graph.py`)
+
+### State Schema (`AnalyticsState`)
+```python
+class AnalyticsState(TypedDict):
+    question: str           # Input
+    query_type: str         # Intent (e.g., 'volume_trend')
+    filters: Dict           # {start_date: '...', end_date: '...'}
+    analytics_result: Any   # SQL Output
+    semantic_result: List   # Vector Output
+    reasoning_trace: List   # Audit log
+    final_answer: str       # LLM Output
+```
+
+### Node Logic
+1.  **`classify_query`**: Uses LLM to extract intent and filters (JSON output).
+2.  **`resolve_time_range`**: Queries DB for min/max dates and resolves "last_week" relative to Max Date.
+3.  **`execute_root_cause_analysis`**:
+    - Runs structured analytics first (Trend).
+    - Python logic finds anomalies (Min/Max).
+    - Triggers targeted semantic search for that specific date.
+
+## 3. Analytics Engine (`src/analytics.py`)
+
+### Connection Factory
+- `ensure_database()`: Downloads DB from HuggingFace if missing.
+- `get_connection()`: Returns read-only DuckDB connection.
+
+### Query Executor
+- `execute_analytics_query`: Predefined parameterized SQL queries.
+- `generate_safe_sql`: Validates custom aggregation requests against an allowlist to prevent SQL injection.
+
+## 4. Retrieval Engine (`src/retrieve.py`)
+
+### Embedding Strategy
+1.  **Cloud**: HuggingFace Inference API (avoids local RAM usage).
+2.  **Fallback**: Local `sentence_transformers` (CPU).
+
+### Vector Search
+Uses DuckDB's `list_cosine_similarity`:
+```sql
+SELECT postcontent, list_cosine_similarity(embedding, ?) as score
+FROM posts
+WHERE date >= ? AND date <= ?
+ORDER BY score DESC LIMIT 5
+```
+This enables hybrid filtering (SQL Filter + Vector Similarity) in a single step.

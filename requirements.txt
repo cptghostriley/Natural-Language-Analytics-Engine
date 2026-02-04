@@ -7,6 +7,6 @@ langchain
 langchain-community
 langchain-openai
 textblob
-streamlit
+streamlit>=1.40.0
 python-dotenv
 requests
